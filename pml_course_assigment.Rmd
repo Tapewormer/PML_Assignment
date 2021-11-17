@@ -1,0 +1,96 @@
+---
+title: "PML-Course Assignment"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo  = TRUE)
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+## CONTEXT  
+Data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants has been collected. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. This is the "classe" variable in the training set with five levels from A to E. The training set consists of 19622 observations for 160 variables (including "classe"). The goal of this homework is to build a model to predict the manner in which the exercise was done.  
+More information here: http://groupware.les.inf.puc-rio.br/har
+ 
+
+```{r message=FALSE, warning=FALSE}
+set.seed(1234)
+library(caret)
+library(dplyr)
+library(RANN)
+```
+```{r message=FALSE, warning=FALSE}
+# Load data into a training and test set
+# Adress and command for first time download
+#download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", "pmlTraining.csv")
+#download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", "pmlTesting.csv")
+training  = read.csv("pmlTraining.csv")
+testing = read.csv("pmlTesting.csv")
+```
+
+
+### PREPROCESSING  
+We remove the variables that will not be used as predictors for building the models since they are descriptive statistics about the observations (e.g. average, variance, minimum value, etc).
+```{r}
+dim(training)
+training <- training %>% select(!starts_with(c("avg", "var", "stddev", "min", "max")))
+dim(training)
+```
+Out of 160 variables, 96 are remaining. Then we remove the predictors which have zero or almost zero variance and will not be helpful for the construction of the model.
+```{r}
+var_res <- nearZeroVar(training,saveMetrics=TRUE)
+training <- training %>% select_if(var_res$nzv==FALSE)
+dim(training)
+```  
+Out of 96 variables, 65 are remaining wich have non-zero variability. There are columns containing NA values so we could "fill" them in with K-nearest neighbours method. But some data inspection reveals that 6 variables account for all the NA values and that in those columns out of 19622 observations, 19216 are NA. So we remove those predictors as well 
+```{r}
+#  Get the sum of NA per columns/predictors
+NA_filled <- training %>% 
+             summarise(across( everything(),~sum(is.na(.)) )) %>%
+             select(where(~.>0))
+# Find out they are all aggregated in 6 columns
+NA_filled
+# Remove those columns/predictors
+training <- training %>% select(-c(colnames(NA_filled)))
+# Get a quick look at the data
+dim(training)
+training %>% select(classe) %>% table()
+```
+We will consider 58 predictors.
+
+### MODEL TRAINING  
+We use 10 fold cross-validation to estimate the out of sample error. We perform two differents kinds of analysis : a linear one (linear discriminant analysis) and a tree prediction (random forest). We will compare the accuracy for each of those models individually as well as for their combination, choose the best performing one and proceed to the prediction. 
+```{r warning=FALSE}
+train_control <- trainControl(method="cv", number=10)
+modelLDA <- train(classe ~., data = training, method = "lda", trControl = train_control)
+modelRF  <- train(classe ~., data = training, method = "rf", trControl = train_control, ntree = 10)
+```
+```{r}
+# We can look at the accuracy from cross validation of the models
+results <- resamples(list(LDA=modelLDA, RF=modelRF))
+summary(results)
+ggplot(results) + labs(y = "Accuracy") + theme_linedraw()
+```
+  
+  We can see that both models have a very high and similar accuracy.
+
+
+### MODEL TESTING  
+```{r}
+predRF  <- predict(modelRF,testing)
+predLDA <- predict(modelLDA,testing)
+predRF
+predLDA
+```
+
+### CONCLUSION  
+Both models, one relying on linear analysis and one non-linear using tree prediction have excellent out of sample accuracy of 99%. In this case it is probably not worth trying other models or model stacking.
+
+
+
+
+
+
+
+
+
