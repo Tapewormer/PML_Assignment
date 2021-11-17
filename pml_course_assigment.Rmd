@@ -1,6 +1,8 @@
 ---
 title: "PML-Course Assignment"
-output: html_document
+output: 
+  html_document:
+    keep_md: true
 ---
 
 ```{r setup, include=FALSE}
@@ -21,28 +23,33 @@ library(RANN)
 ```
 ```{r message=FALSE, warning=FALSE}
 # Load data into a training and test set
-# Adress and command for first time download
-#download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", "pmlTraining.csv")
-#download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", "pmlTesting.csv")
-training  = read.csv("pmlTraining.csv")
-testing = read.csv("pmlTesting.csv")
+if (!file.exists("pmlTraining.csv")){
+    urlTrain <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+    download.file(urlTrain, "pmlTraining.csv") }
+if (!file.exists("pmlTesting.csv")){
+    urlTest <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+    download.file(urlTest, "pmlTesting.csv") }
+training = read.csv("pmlTraining.csv")
+testing  = read.csv("pmlTesting.csv")
 ```
 
 
 ### PREPROCESSING  
-We remove the variables that will not be used as predictors for building the models since they are descriptive statistics about the observations (e.g. average, variance, minimum value, etc).
+We remove the variables that will not be used as predictors for building the models since they are descriptive statistics about the observations (e.g. ID, average, variance, minimum value, etc).
 ```{r}
 dim(training)
 training <- training %>% select(!starts_with(c("avg", "var", "stddev", "min", "max")))
+# Remove row id
+training <- training %>% select(-"X")
 dim(training)
 ```
-Out of 160 variables, 96 are remaining. Then we remove the predictors which have zero or almost zero variance and will not be helpful for the construction of the model.
+Out of 160 variables, 95 are remaining. Then we remove the predictors which have zero or almost zero variance and will not be helpful for the construction of the model.
 ```{r}
 var_res <- nearZeroVar(training,saveMetrics=TRUE)
 training <- training %>% select_if(var_res$nzv==FALSE)
 dim(training)
 ```  
-Out of 96 variables, 65 are remaining wich have non-zero variability. There are columns containing NA values so we could "fill" them in with K-nearest neighbours method. But some data inspection reveals that 6 variables account for all the NA values and that in those columns out of 19622 observations, 19216 are NA. So we remove those predictors as well 
+Out of 96 variables, 64 are remaining wich have non-zero variability. There are columns containing NA values so we could "fill" them in with K-nearest neighbours method. But some data inspection reveals that 6 variables account for all the NA values and that in those columns out of 19622 observations, 19216 are NA. So we remove those predictors as well 
 ```{r}
 #  Get the sum of NA per columns/predictors
 NA_filled <- training %>% 
@@ -56,10 +63,10 @@ training <- training %>% select(-c(colnames(NA_filled)))
 dim(training)
 training %>% select(classe) %>% table()
 ```
-We will consider 58 predictors.
+We will consider 57 predictors.
 
 ### MODEL TRAINING  
-We use 10 fold cross-validation to estimate the out of sample error. We perform two differents kinds of analysis : a linear one (linear discriminant analysis) and a tree prediction (random forest). We will compare the accuracy for each of those models individually as well as for their combination, choose the best performing one and proceed to the prediction. 
+We use 10 fold cross-validation to estimate the out of sample error. We perform two different kinds of analysis : a linear one (linear discriminant analysis) and a tree prediction (random forest). We will compare the accuracy of those models, choose the best performing one and proceed to the prediction. 
 ```{r warning=FALSE}
 train_control <- trainControl(method="cv", number=10)
 modelLDA <- train(classe ~., data = training, method = "lda", trControl = train_control)
@@ -72,19 +79,17 @@ summary(results)
 ggplot(results) + labs(y = "Accuracy") + theme_linedraw()
 ```
   
-  We can see that both models have a very high and similar accuracy.
+  We can see that the random forest model perform better (Accuracy=0.9991335) than the linear discriminant analysis (Accuracy=0.8546027). It is possible that the data structure's assumptions (gaussian distribution in each class, same covariance) made in the context of the model-based linear analysis are not met while the random forest, free of those assumption on the data, yields a better accuracy. Also the LDA warned (warnings not shown) for colinearity of some predictors to which linear methods are specially weak. For all those reasons we will use the non-linear model for performing predictions on the testing set.
 
 
 ### MODEL TESTING  
 ```{r}
 predRF  <- predict(modelRF,testing)
-predLDA <- predict(modelLDA,testing)
 predRF
-predLDA
 ```
 
 ### CONCLUSION  
-Both models, one relying on linear analysis and one non-linear using tree prediction have excellent out of sample accuracy of 99%. In this case it is probably not worth trying other models or model stacking.
+The non-linear model using tree prediction (random forest) has, according to the ten fold cross-validation, an excellent out of sample accuracy of 99%. In this case it is probably not worth trying other models or model stacking.
 
 
 
